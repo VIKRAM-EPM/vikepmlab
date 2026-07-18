@@ -104,3 +104,4 @@ MIT — see [LICENSE](LICENSE).
 ## Related write-up
 
 Full breakdown of the gotchas and design decisions in this script:
+[substitution-variable-automation/Substitution_Auto_Update.groovy](https://github.com/VIKRAM-EPM/vikepmlab/blob/6b089f97438229033e4343c4cb1a8bca7fa1f3d8/substitution-variable-automation/Substitution_Auto_Update.groovy)
