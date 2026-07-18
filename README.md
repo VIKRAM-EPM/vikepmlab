@@ -104,4 +104,4 @@ MIT — see [LICENSE](LICENSE).
 ## Related write-up
 
 Full breakdown of the gotchas and design decisions in this script:
-[VikEPMLab blog post link — add once published]
+https://github.com/VIKRAM-EPM/vikepmlab/blob/7a30c7df5f54b3b04729cd02317ba3ce6a3dc26e/Substitution_Auto_Update.groovy
