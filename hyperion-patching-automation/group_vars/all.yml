@@ -1,0 +1,31 @@
+---
+# =====================================================================
+# Shared patching configuration — used by Java/OPatch, FMW/WebLogic,
+# and OHS playbooks. Update paths here once; all playbooks pick it up.
+# =====================================================================
+
+# Base path where downloaded patches are staged
+patchpath: "/path/to/patches/"
+
+# Java / OPatch
+jdkepmdest: "/path/to/epm/jdk/dest/"
+opatchdest: "/path/to/middleware/home/"
+opatchohdest: "/path/to/oracle/home/"
+ohsopatchdest: "/path/to/ohs/home/"   
+
+# FMW / WebLogic
+opatchhome: "/path/to/opatch/"          # where the opatch binary itself lives
+wlspatches: "/path/to/wls/bundle/patch/staging/"
+middlewarehome: "/path/to/middleware/"  # -oh target for opatch
+
+# OHS (fill in once you're ready for that playbook)
+ohshome: "/path/to/ohs/home/"
+
+# Email / notification
+smtp_host: "<smtp_hostname>"
+smtp_port: 25
+email_from: "<sender email id>"
+email_to: "<distribution list>"
+
+# Shared log path pattern (each playbook overrides the filename)
+patch_log_dir: "/tmp/"
