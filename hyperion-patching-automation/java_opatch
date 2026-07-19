@@ -1,0 +1,180 @@
+---
+- name: Java Installation
+  hosts: DEV_HYP
+  # vars come from group_vars/all.yml
+
+  tasks:
+    - name: Find Java Installation zip files
+      find:
+        paths: "{{ patchpath }}java"
+        patterns: "*180*.zip"
+        recurse: yes
+      register: javazipfile
+
+    - name: Show Variable
+      debug:
+        msg: "File which I found is {{ (javazipfile.files | sort(attribute='mtime', reverse=true))[0].path }}"
+
+    - name: Unarchive ZIP files
+      unarchive:
+        src: "{{ (javazipfile.files | sort(attribute='mtime', reverse=true))[0].path }}"
+        dest: "{{ patchpath }}java"
+        remote_src: yes
+      when: javazipfile.matched > 0
+
+    - name: Find Latest Java tar file
+      find:
+        paths: "{{ patchpath }}java"
+        patterns: "jdk*.tar.gz"
+        recurse: yes
+      register: jdkzipfile
+
+    - name: Unarchive Latest Java tar file
+      unarchive:
+        src: "{{ (jdkzipfile.files | sort(attribute='mtime', reverse=true))[0].path }}"
+        dest: "{{ patchpath }}java"
+        remote_src: yes
+      when: jdkzipfile.matched > 0
+
+    - name: Find Latest Java directory
+      find:
+        paths: "{{ patchpath }}java"
+        patterns: "jdk1.8*"
+        recurse: yes
+        file_type: directory
+      register: jdkdir
+
+    - name: Check jdk folder if exists
+      stat:
+        path: "{{ patchpath }}java/jdk"
+      register: jdkdir_check
+
+    - name: Delete jdk folder if exists
+      file:
+        path: "{{ patchpath }}java/jdk"
+        state: absent
+      when: jdkdir_check.stat.exists
+
+    - name: Rename discovered jdk directory to jdk
+      ansible.builtin.command: >
+        mv "{{ (jdkdir.files | sort(attribute='mtime', reverse=true))[0].path }}"
+        "{{ patchpath }}java/jdk"
+      when: jdkdir.matched > 0
+
+    - name: Copy jdk folder to destination
+      command: rsync -av --no-links "{{ patchpath }}java/jdk/" "{{ jdkepmdest }}"
+
+
+- name: Opatch Upgrade - Middleware Home
+  hosts: DEV_HYP
+
+  tasks:
+    - name: Find opatch zip file
+      find:
+        paths: "{{ patchpath }}opatch"
+        patterns: "*Generic.zip"
+        recurse: yes
+      register: opatch_zipfile
+
+    - name: Show Variable
+      debug:
+        msg: "File which I found is {{ (opatch_zipfile.files | sort(attribute='mtime', reverse=true))[0].path }}"
+
+    - name: Unarchive opatch zip file in Middleware home
+      unarchive:
+        src: "{{ (opatch_zipfile.files | sort(attribute='mtime', reverse=true))[0].path }}"
+        dest: "{{ opatchdest }}"
+        remote_src: yes
+      when: opatch_zipfile.matched > 0
+
+    - name: Run opatch in Middleware home to install opatch latest version
+      command:
+        chdir: "{{ opatchdest }}"
+        cmd: "java -jar {{ opatchdest }}PATCH_TOP/6880880/opatch_generic.jar -silent oracle_home={{ middlewarehome }}"
+
+
+- name: Opatch Upgrade - OHS Home
+  hosts: DEV_HYP
+
+  tasks:
+    - name: Run opatch in OHS home to install opatch latest version
+      command:
+        chdir: "{{ ohsopatchdest }}"
+        cmd: "java -jar {{ opatchdest }}PATCH_TOP/6880880/opatch_generic.jar -silent oracle_home={{ ohshome }}"
+
+
+- name: Send email Java and Opatch Version after applying patch successfully
+  hosts: DEV_HYP
+  vars:
+    jopversion: "{{ patch_log_dir }}java_opatch_version.log"
+
+  tasks:
+    - name: Initialize jopversion file with current date
+      shell:
+        chdir: "{{ opatchdest }}"
+        cmd: "date > {{ jopversion }}"
+
+    - name: Write horizontal line
+      shell:
+        cmd: "echo '<hr><br>' >> {{ jopversion }}"
+
+    - name: Get Java version
+      command:
+        chdir: "{{ opatchdest }}"
+        cmd: "java -version"
+      register: java_version
+
+    - name: Write Java version to jopversion file
+      lineinfile:
+        path: "{{ jopversion }}"
+        line: "{{ item }}"
+        insertafter: EOF
+      loop: "{{ java_version.stderr_lines }}"
+
+    - name: Write Middleware Home in file
+      shell:
+        cmd: "echo '<br><br>Middleware Home: {{ opatchdest }} <br>' >> {{ jopversion }}"
+
+    - name: Run opatch version in Middleware Home
+      shell:
+        chdir: "{{ opatchdest }}"
+        cmd: "sh opatch version >> {{ jopversion }}"
+
+    - name: Write OHS Home in file
+      shell:
+        cmd: "echo '<br><br>OHS Home: {{ ohshome }} <br>' >> {{ jopversion }}"
+
+    - name: Run opatch version in OHS Home
+      shell:
+        chdir: "{{ ohsopatchdest }}"
+        cmd: "sh opatch version -oh {{ ohshome }} >> {{ jopversion }}"
+
+    - name: Add hostname to jopversion file
+      shell:
+        cmd: "hostname >> {{ jopversion }}"
+
+    - name: Read jopversion file
+      ansible.builtin.slurp:
+        src: "{{ jopversion }}"
+      register: javaopatch_content
+
+    - name: Format file content for HTML email
+      set_fact:
+        patch_content: "{{ javaopatch_content['content'] | b64decode | regex_replace('\\n', '<br/>') }}"
+
+    - name: Define custom hostname
+      set_fact:
+        custom_hostname: "{{ hostvars[inventory_hostname]['custom_hostname'] | default(inventory_hostname) }}"
+
+    - name: Email Java and Opatch version
+      mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        from: "{{ email_from }}"
+        to: "{{ email_to }}"
+        subject: "Java and Opatch version from {{ custom_hostname }}"
+        body: "<html>{{ patch_content }}</html>"
+        subtype: html
+        secure: starttls
+        charset: utf-8
+      delegate_to: localhost
