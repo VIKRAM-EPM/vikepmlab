@@ -1,0 +1,131 @@
+---
+- name: OHS Patches
+  hosts: DEV_HYP
+  vars:
+    patchstatus: "{{ patch_log_dir }}ohs_patch_status.log"
+  # remaining vars (patchpath, opatchdest, ohshome, ohspatchbp) come from group_vars/all.yml
+
+  tasks:
+    - name: Find all directories in OHS staging folder
+      find:
+        paths: "{{ ohspatchbp }}"
+        file_type: directory
+      register: ohs_dir
+
+    - name: Show all directories found
+      debug:
+        msg: "{{ item.path }}"
+      loop: "{{ ohs_dir.files }}"
+
+    - name: Delete all directories under OHS staging folder
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ ohs_dir.files }}"
+
+    - name: Find all OHS patches zip files
+      find:
+        paths: "{{ patchpath }}OHS"
+        patterns: "*.zip"
+        recurse: yes
+      register: ohs_zipped
+
+    - name: Show found zip files
+      debug:
+        msg: "Found zip file: {{ item.path }}"
+      loop: "{{ ohs_zipped.files }}"
+
+    - name: Unarchive all recommended patches zip files in OHS staging folder
+      unarchive:
+        src: "{{ item.path }}"
+        dest: "{{ ohspatchbp }}"
+        remote_src: yes
+      loop: "{{ ohs_zipped.files }}"
+      when: ohs_zipped.matched > 0
+
+    - name: Get list of all directories which are unzipped
+      find:
+        paths: "{{ ohspatchbp }}"
+        file_type: directory
+      register: ohs_unzipped
+
+    - name: Show all extracted directories
+      debug:
+        msg: "{{ item.path }}"
+      loop: "{{ ohs_unzipped.files }}"
+
+    - name: Run opatch to install recommended patches
+      shell:
+        chdir: "{{ ohspatchbp }}"
+        cmd: "yes y | sh opatch apply {{ item.path }} -oh {{ ohshome }} -silent"
+      loop: "{{ ohs_unzipped.files }}"
+
+    - name: Extract directory names from ohs_unzipped
+      set_fact:
+        directory_name: "{{ ohs_unzipped.files | map(attribute='path') | map('basename') | list }}"
+
+    - name: Initialize patchstatus file
+      shell:
+        chdir: "{{ opatchdest }}"
+        cmd: "date > {{ patchstatus }}"
+
+    - name: Add hostname to patchstatus file
+      shell:
+        cmd: "hostname >> {{ patchstatus }}"
+
+    - name: Write horizontal line to patchstatus file
+      shell:
+        cmd: "echo '<hr><br>' >> {{ patchstatus }}"
+
+    - name: Write OHS home to patchstatus file
+      shell:
+        cmd: "echo '<br>{{ ohshome }} <br>' >> {{ patchstatus }}"
+
+    - name: Validate all OHS patches are applied
+      shell:
+        chdir: "{{ ohspatchbp }}"
+        cmd: "sh opatch_lsinventory -oh {{ ohshome }} | grep {{ item }} >> {{ patchstatus }}"
+      loop: "{{ directory_name }}"
+
+##################################################################################################################################
+#########################             Run Obfuscate in OHS Home        ####################################################
+##################################################################################################################################
+
+    - name: Run Obfuscate in OHS Home
+      shell:
+        chdir: "{{ opatchdest }}"
+        cmd: "sh opatch util Obfuscate -oh {{ ohshome }}"
+
+    - name: Log successful Obfuscate run
+      shell:
+        cmd: "echo '<br>Ran successfully Obfuscate in {{ ohshome }}' >> {{ patchstatus }}"
+
+##################################################################################################################################
+#########################             Read patchstatus file & Send email       ###################################################
+##################################################################################################################################
+
+    - name: Read patchstatus file
+      ansible.builtin.slurp:
+        src: "{{ patchstatus }}"
+      register: patchstatus_content
+
+    - name: Format file content for HTML email
+      set_fact:
+        patch_content: "{{ patchstatus_content['content'] | b64decode | regex_replace('\\n', '<br/>') }}"
+
+    - name: Define custom hostname
+      set_fact:
+        custom_hostname: "{{ hostvars[inventory_hostname]['custom_hostname'] | default(inventory_hostname) }}"
+
+    - name: Email applied OHS patches summary
+      mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        from: "{{ email_from }}"
+        to: "{{ email_to }}"
+        subject: "Hyperion OHS Patches applied on {{ custom_hostname }}"
+        body: "<html>{{ patch_content }}</html>"
+        subtype: html
+        secure: starttls
+        charset: utf-8
+      delegate_to: localhost
