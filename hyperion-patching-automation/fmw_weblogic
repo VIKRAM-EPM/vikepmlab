@@ -1,0 +1,223 @@
+---
+- name: WLS Patches
+  hosts: DEV_HYP
+  vars:
+    patchstatus: "{{ patch_log_dir }}fmw_wls_patch_status.log"
+
+##################################################################################################################################
+#########################             Applying FMW Patches        ######################################################
+##################################################################################################################################
+
+  tasks:
+    - name: Find all directories in FMW extraction folder
+      find:
+        paths: "{{ opatchdest }}"
+        file_type: directory
+      register: wls_dir
+
+    - name: Show all directories found
+      debug:
+        msg: "{{ item.path }}"
+      loop: "{{ wls_dir.files }}"
+
+    - name: Delete all directories under FMW folder
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ wls_dir.files }}"
+
+    - name: Find all recommended patches zip files
+      find:
+        paths: "{{ patchpath }}FMW"
+        patterns: "*.zip"
+        recurse: yes
+      register: wls_unzipped
+
+    - name: Show found zip files
+      debug:
+        msg: "Found zip file: {{ item.path }}"
+      loop: "{{ wls_unzipped.files }}"
+
+    - name: Unarchive all recommended patches zip files in Middleware home
+      unarchive:
+        src: "{{ item.path }}"
+        dest: "{{ opatchdest }}"
+        remote_src: yes
+      loop: "{{ wls_unzipped.files }}"
+      when: wls_unzipped.matched > 0
+
+    - name: Get list of all directories which are unzipped
+      find:
+        paths: "{{ opatchdest }}"
+        file_type: directory
+      register: wls_patchlist
+
+    - name: Show all extracted directories
+      debug:
+        msg: "{{ item.path }}"
+      loop: "{{ wls_patchlist.files }}"
+
+    - name: Run opatch to install recommended patches
+      shell:
+        chdir: "{{ opatchhome }}"
+        cmd: "yes y | sh opatch apply {{ item.path }} -oh {{ middlewarehome }} -silent"
+      loop: "{{ wls_patchlist.files }}"
+
+    - name: Extract directory names from wls_patchlist
+      set_fact:
+        directory_name: "{{ wls_patchlist.files | map(attribute='path') | map('basename') | list }}"
+
+    - name: Initialize patchstatus file
+      shell:
+        chdir: "{{ opatchhome }}"
+        cmd: "date > {{ patchstatus }}"
+
+    - name: Validate all FMW patches are applied
+      shell:
+        chdir: "{{ opatchhome }}"
+        cmd: "sh opatch_lsinventory -oh {{ middlewarehome }} | grep {{ item }} >> {{ patchstatus }}"
+      loop: "{{ directory_name }}"
+
+##################################################################################################################################
+#########################             Applying WebLogic Bundle Patch        ######################################################
+##################################################################################################################################
+
+    - name: Find WLS bundle patch staging folder contents
+      find:
+        paths: "{{ wlspatches }}"
+        file_type: directory
+      register: wls_bp_dir
+
+    - name: Show WLS bundle patch staging directories
+      debug:
+        msg: "{{ item.path }}"
+      loop: "{{ wls_bp_dir.files }}"
+
+    - name: Delete all directories under WLS bundle patch folder
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ wls_bp_dir.files }}"
+
+    - name: Find WLS Bundled Patch zip file
+      find:
+        paths: "{{ patchpath }}WLS"
+        patterns: "*.zip"
+      register: wls_zipped
+
+    - name: Unarchive WLS bundle patch zip file
+      unarchive:
+        src: "{{ (wls_zipped.files | sort(attribute='mtime', reverse=true))[0].path }}"
+        dest: "{{ wlspatches }}"
+        remote_src: yes
+      when: wls_zipped.matched > 0
+
+    - name: Get WLS extracted directory
+      find:
+        paths: "{{ wlspatches }}"
+        patterns: "WLS_SPB*"
+        file_type: directory
+        recurse: yes
+      register: wls_unzipped
+
+    - name: Show WLS extracted directory
+      debug:
+        msg: "WLS Bundle directory: {{ wls_unzipped.files[0].path }}"
+
+    - name: Run opatch simulation (report) for WLS Bundle Patch
+      shell:
+        chdir: "{{ wls_unzipped.files[0].path }}/binary_patches"
+        cmd: "yes y | sh {{ opatchhome }}opatch napply -report -oh {{ middlewarehome }} -phBaseFile linux64_patchlist.txt"
+      async: 3600
+      poll: 0
+      register: wls_report_result
+
+    - name: Display simulation output
+      debug:
+        var: wls_report_result.stdout
+        verbosity: 2
+
+    - name: Wait for opatch simulation to complete
+      ansible.builtin.async_status:
+        jid: "{{ wls_report_result.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 300
+      delay: 5
+
+    - name: Run opatch napply after simulation completes successfully
+      shell:
+        chdir: "{{ wls_unzipped.files[0].path }}/binary_patches"
+        cmd: "yes y | sh {{ opatchhome }}opatch napply -oh {{ middlewarehome }} -phBaseFile linux64_patchlist.txt"
+      register: wls_napply_result
+
+    - name: Extract WLS Bundle Patch directory name
+      set_fact:
+        wls_bp_dirname: "{{ wls_unzipped.files[0].path | basename }}"
+
+    - name: Show WLS Bundle Patch directory name
+      debug:
+        var: wls_bp_dirname
+
+    - name: Extract WLS Bundle Patch number
+      shell:
+        chdir: "{{ wlspatches }}"
+        cmd: "echo {{ wls_bp_dirname }} | sed 's/[^0-9.]*//g'"
+      register: wls_bp_num
+
+    - name: Show WLS Bundle Patch number
+      debug:
+        var: wls_bp_num.stdout
+
+    - name: Validate WLS Bundle Patch is applied
+      shell:
+        chdir: "{{ opatchhome }}"
+        cmd: "sh opatch_lsinventory -oh {{ middlewarehome }} | grep {{ wls_bp_num.stdout }} >> {{ patchstatus }}"
+
+##################################################################################################################################
+#########################             Run Obfuscate in Middleware Home        ####################################################
+##################################################################################################################################
+
+    - name: Run Obfuscate in Middleware Home
+      shell:
+        chdir: "{{ opatchhome }}"
+        cmd: "sh opatch util Obfuscate -oh {{ middlewarehome }}"
+
+    - name: Log successful Obfuscate run
+      shell:
+        cmd: "echo '<br>Ran successfully Obfuscate in {{ middlewarehome }}' >> {{ patchstatus }}"
+
+##################################################################################################################################
+#########################             Read patchstatus file & Send email       ###################################################
+##################################################################################################################################
+
+    - name: Add hostname to patchstatus file
+      shell:
+        chdir: "{{ opatchhome }}"
+        cmd: "hostname >> {{ patchstatus }}"
+
+    - name: Read patchstatus file
+      ansible.builtin.slurp:
+        src: "{{ patchstatus }}"
+      register: patchstatus_content
+
+    - name: Format file content for HTML email
+      set_fact:
+        patch_content: "{{ patchstatus_content['content'] | b64decode | regex_replace('\\n', '<br/>') }}"
+
+    - name: Define custom hostname
+      set_fact:
+        custom_hostname: "{{ hostvars[inventory_hostname]['custom_hostname'] | default(inventory_hostname) }}"
+
+    - name: Email applied FMW/WLS patches summary
+      mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        from: "{{ email_from }}"
+        to: "{{ email_to }}"
+        subject: "Hyperion FMW/WLS Patches applied on {{ custom_hostname }}"
+        body: "<html>{{ patch_content }}</html>"
+        subtype: html
+        secure: starttls
+        charset: utf-8
+      delegate_to: localhost
