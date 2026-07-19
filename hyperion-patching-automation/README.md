@@ -23,6 +23,7 @@ that shift sustainable.
 Full announcement: [Oracle Security Blog — Monthly CSPUs Begin May 28, 2026](https://blogs.oracle.com/security/update-monthly-critical-security-patch-updates-cspus-begin-may-28-2026)
 
 ## Structure
+```
 hyperion-patching/
 ├── group_vars/
 │   └── all.yml              # shared config used by all three playbooks
@@ -30,7 +31,7 @@ hyperion-patching/
 ├── fmw_weblogic.yml          # FMW recommended patches + WebLogic Bundle Patch
 ├── ohs.yml                   # OHS patches
 └── README.md
-
+```
 ## Why three separate playbooks instead of one
 
 Ansible plays run sequentially and stop on the first failure by default.
