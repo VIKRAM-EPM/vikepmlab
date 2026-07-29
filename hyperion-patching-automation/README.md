@@ -3,7 +3,8 @@
 Ansible playbooks that automate patching an on-premises Oracle Hyperion / EPM
 environment — Java, OPatch (Middleware Home and OHS Home), FMW recommended
 patches, the WebLogic Bundle Patch, and OHS patches — with email notification
-of applied versions after each run.
+of applied versions after each run. Target environment is selected at
+run time via an Ansible Tower Survey.
 
 ## Why this exists
 
@@ -26,10 +27,10 @@ Full announcement: [Oracle Security Blog — Monthly CSPUs Begin May 28, 2026](h
 ```
 hyperion-patching/
 ├── group_vars/
-│   └── all.yml              # shared config used by all three playbooks
-├── java_opatch.yml           # Java install + OPatch upgrade (Middleware Home & OHS Home)
-├── fmw_weblogic.yml          # FMW recommended patches + WebLogic Bundle Patch
-├── ohs.yml                   # OHS patches
+│   └── all.yml                    # shared config used by all three playbooks
+├── Hyp_Java_Opatch.yml             # Java install + OPatch upgrade (Middleware Home & OHS Home)
+├── Hyp_FMW_Weblogic.yml            # FMW recommended patches + WebLogic Bundle Patch
+├── Hyp_OHS.yml                     # OHS patches
 └── README.md
 ```
 ## Why three separate playbooks instead of one
@@ -45,7 +46,7 @@ failed layer instead of re-running everything.
 
 ## What each playbook does
 
-### `java_opatch.yml`
+### `Hyp_Java_Opatch.yml`
 1. Finds and extracts the latest Java installation zip/tarball, renames the
    discovered JDK directory to a standard `jdk` folder, syncs it to the EPM
    destination
@@ -54,7 +55,7 @@ failed layer instead of re-running everything.
    independent OPatch install (see Gotchas below)
 4. Sends an email summarizing the Java version and both OPatch versions
 
-### `fmw_weblogic.yml`
+### `Hyp_FMW_Weblogic.yml`
 1. Clears out any stale extracted patch directories, unarchives the latest
    FMW recommended patch zips, applies each via `opatch apply`, and
    validates the install
@@ -64,11 +65,32 @@ failed layer instead of re-running everything.
 3. Runs `opatch util Obfuscate` against the Middleware Home
 4. Emails a summary of applied FMW and WLS Bundle Patch versions
 
-### `ohs.yml`
+### `Hyp_OHS.yml`
 1. Clears stale extracted directories, unarchives the latest OHS patch
    zips, applies each via `opatch apply`, and validates the install
 2. Runs `opatch util Obfuscate` against the OHS Home
 3. Emails a summary of applied OHS patch versions
+
+## Selecting the target environment (Ansible Tower Survey)
+
+All three playbooks target `hosts: "{{ target_env }}"` — a variable
+supplied at run time rather than hardcoded per playbook. In Ansible Tower/
+AWX, this is set up as a Job Template Survey:
+
+1. Job Template → **Survey** tab → **Add**
+2. **Question:** "Which environment do you want to patch?"
+3. **Answer variable name:** `target_env`
+4. **Answer type:** Multiple Choice (single select)
+5. **Answer choices:** must exactly match your real inventory group names
+   (e.g. `DEVHYP`, `DEVOHS`)
+
+Running from the CLI instead of Tower works the same way, via `-e`:
+
+ansible-playbook -i inventory.ini Hyp_Java_Opatch.yml -e target_env=DEVHYP
+
+**Important:** the Survey's answer choices must be the literal inventory
+group names — see the Gotchas section below for why an indirection/lookup
+table (mapping a survey label to a group name) does not work here.
 
 ## Shared configuration (`group_vars/all.yml`)
 
@@ -105,8 +127,8 @@ load correctly when run as a Tower Job Template.
 ## Requirements
 
 - Ansible with access to target Hyperion/EPM on-prem hosts
-- A host group (`DEV_HYP` in these playbooks — rename to match your
-  inventory) with SSH/WinRM access and sufficient privileges to run OPatch
+- Inventory host groups matching your environment names (e.g. `DEVHYP`,
+  `DEVOHS`) with SSH access and sufficient privileges to run OPatch
 - Patch files pre-staged under the paths defined in `group_vars/all.yml`
   (`java/`, `opatch/`, `FMW/`, `WLS/`, `OHS/` subfolders under `patchpath`)
 - SMTP relay access for the email notification steps
@@ -115,17 +137,40 @@ load correctly when run as a Tower Job Template.
 
 1. Update `group_vars/all.yml` with your actual environment paths and SMTP
    details
-2. Update `hosts: DEV_HYP` in each playbook to match your actual inventory
-   group name
+2. Confirm your inventory host group names match what you'll use as
+   Survey answer choices (or `-e target_env=...` values)
 3. Fill in the placeholder OPatch install commands where noted in
-   `java_opatch.yml`
+   `Hyp_Java_Opatch.yml`
 4. Run in dependency order:
-   ansible-playbook -i inventory.ini java_opatch.yml
-   ansible-playbook -i inventory.ini fmw_weblogic.yml
-   ansible-playbook -i inventory.ini ohs.yml
 
-   (Or as separate Job Templates in Tower/AWX, chained in a Workflow
-   Template in this order.)
+ansible-playbook -i inventory.ini Hyp_Java_Opatch.yml -e target_env=DEVHYP
+ansible-playbook -i inventory.ini Hyp_FMW_Weblogic.yml -e target_env=DEVHYP
+ansible-playbook -i inventory.ini Hyp_OHS.yml -e target_env=DEVOHS
+
+(Or as separate Job Templates in Tower/AWX, each with its own Survey,
+   chained in a Workflow Template in this order.)
+
+## Testing before running against real hosts
+
+Every playbook can be validated safely before pointing it at a real
+environment:
+
+1. **Syntax check** — catches YAML/Jinja errors:
+ansible-playbook Hyp_Java_Opatch.yml --syntax-check
+
+2. **Host resolution check** — confirms `target_env` correctly targets the
+   intended group, without running anything:
+   ansible-playbook -i inventory.ini Hyp_Java_Opatch.yml -e target_env=DEVHYP --list-hosts
+   
+4. **Dry logic test** — point `patchpath` at a folder of harmless staged
+   fake zip files (via `-e patchpath=/tmp/patchtest/`) and run against a
+   `localhost`-mapped test inventory to confirm file discovery, sorting,
+   and extraction logic before ever touching real `opatch`/`java`
+   commands against a live Oracle Home.
+
+All three playbooks in this repo were validated this way — syntax-checked,
+host-resolution-checked, and run end-to-end against staged fake patch files
+with zero failures, including a second run to confirm idempotency.
 
 ## Gotchas learned building this
 
@@ -156,6 +201,16 @@ load correctly when run as a Tower Job Template.
 - **Ansible Tower/AWX loads `group_vars` differently than plain CLI
   Ansible.** Place it in the Project repo root, not inside an
   SCM-sourced Inventory folder, or it may not load at all.
+- **`group_vars` cannot drive a play's `hosts:` line — not even a fully
+  static value with zero templating.** Only true global-scope sources
+  (extra-vars, i.e. a Tower Survey answer, or `-e` on the CLI) are
+  available early enough to resolve which hosts a play targets. An
+  indirection layer — a lookup table in `group_vars` mapping a survey
+  label to a real group name — will silently fail with "variable is
+  undefined," even though that same variable works fine everywhere else
+  in the playbook. The fix: reference the Survey extra-var directly in
+  `hosts:`, and make the Survey's answer choices match your real
+  inventory group names exactly.
 
 ## License
 
@@ -164,4 +219,6 @@ MIT — see [LICENSE](LICENSE).
 ## Related write-up
 
 Full breakdown of the business context, architecture decisions, and
-patching gotchas: 
+patching gotchas: [VikEPMLab blog post link — add once published]
+   
+
