@@ -4,6 +4,14 @@
 # and OHS playbooks. Update paths here once; all playbooks pick it up.
 # =====================================================================
 
+# Map the selected option from Ansible Tower Survey to your exact Inventory Host Groups
+host_group_map:
+  DEVHYP: "DEVHYP"
+  DEVOHS: "DEVOHS"
+
+# Dynamically select the correct host group based on what was chosen in Ansible Tower
+env_hosts: "{{ host_group_map[target_env] }}"
+
 # Base path where downloaded patches are staged
 patchpath: "/path/to/patches/"
 
@@ -11,15 +19,16 @@ patchpath: "/path/to/patches/"
 jdkepmdest: "/path/to/epm/jdk/dest/"
 opatchdest: "/path/to/middleware/home/"
 opatchohdest: "/path/to/oracle/home/"
-ohsopatchdest: "/path/to/ohs/home/"   
+ohsopatchdest: "/path/to/ohs/home/"
 
 # FMW / WebLogic
-opatchhome: "/path/to/opatch/"          # where the opatch binary itself lives
+opatchhome: "/path/to/opatch/"
 wlspatches: "/path/to/wls/bundle/patch/staging/"
-middlewarehome: "/path/to/middleware/"  # -oh target for opatch
+middlewarehome: "/path/to/middleware/home/"
 
-# OHS (fill in once you're ready for that playbook)
+# OHS
 ohshome: "/path/to/ohs/home/"
+ohspatchbp: "/path/to/ohs/patch/staging/"
 
 # Email / notification
 smtp_host: "<smtp_hostname>"
@@ -27,5 +36,5 @@ smtp_port: 25
 email_from: "<sender email id>"
 email_to: "<distribution list>"
 
-# Shared log path pattern (each playbook overrides the filename)
+# Shared log path pattern
 patch_log_dir: "/tmp/"
