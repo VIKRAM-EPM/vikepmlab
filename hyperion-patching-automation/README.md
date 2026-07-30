@@ -219,6 +219,6 @@ MIT — see [LICENSE](LICENSE).
 ## Related write-up
 
 Full breakdown of the business context, architecture decisions, and
-patching gotchas: [VikEPMLab blog post link — add once published]
+patching gotchas: 
    
 
