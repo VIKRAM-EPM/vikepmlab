@@ -1,6 +1,6 @@
 ---
 - name: WLS Patches
-  hosts: DEV_HYP
+  hosts: "{{ target_env }}"
   vars:
     patchstatus: "{{ patch_log_dir }}fmw_wls_patch_status.log"
 
