@@ -1,6 +1,6 @@
 ---
 - name: OHS Patches
-  hosts: DEV_HYP
+  hosts: "{{ target_env }}"
   vars:
     patchstatus: "{{ patch_log_dir }}ohs_patch_status.log"
   # remaining vars (patchpath, opatchdest, ohshome, ohspatchbp) come from group_vars/all.yml
