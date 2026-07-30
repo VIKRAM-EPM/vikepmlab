@@ -70,6 +70,24 @@ failed layer instead of re-running everything.
    zips, applies each via `opatch apply`, and validates the install
 2. Runs `opatch util Obfuscate` against the OHS Home
 3. Emails a summary of applied OHS patch versions
+   
+
+## Why Obfuscate runs after every patch
+
+Both `Hyp_FMW_Weblogic.yml` and `Hyp_OHS.yml` run `opatch util Obfuscate`
+after applying patches. This isn't cleanup — OPatch keeps backup copies of
+every file it replaces in `.patch_storage` inside the Oracle Home, and
+security vulnerability scanners sometimes can't distinguish those old
+backup files from the live, in-use files. A scanner matching against known
+vulnerable file signatures can flag a fully patched server as unpatched,
+purely because of a stale backup copy sitting in storage.
+
+`opatch util Obfuscate` scrambles the contents of those backup files so
+scanners stop matching against them. Oracle introduced it specifically to
+cut down false positives from tools scanning for things like log4j. On a
+monthly CSPU cadence, avoiding false positives on every scan cycle isn't
+optional — it's part of what makes the cadence sustainable rather than a
+source of recurring noise.
 
 ## Selecting the target environment (Ansible Tower Survey)
 
