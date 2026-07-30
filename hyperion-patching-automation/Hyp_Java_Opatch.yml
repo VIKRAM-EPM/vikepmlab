@@ -1,6 +1,6 @@
 ---
 - name: Java Installation
-  hosts: DEV_HYP
+  hosts: "{{ env_hosts }}"
   # vars come from group_vars/all.yml
 
   tasks:
@@ -66,7 +66,7 @@
 
 
 - name: Opatch Upgrade - Middleware Home
-  hosts: DEV_HYP
+  hosts: "{{ env_hosts }}"
 
   tasks:
     - name: Find opatch zip file
@@ -94,7 +94,7 @@
 
 
 - name: Opatch Upgrade - OHS Home
-  hosts: DEV_HYP
+  hosts: "{{ env_hosts }}"
 
   tasks:
     - name: Run opatch in OHS home to install opatch latest version
@@ -104,7 +104,7 @@
 
 
 - name: Send email Java and Opatch Version after applying patch successfully
-  hosts: DEV_HYP
+  hosts: "{{ env_hosts }}"
   vars:
     jopversion: "{{ patch_log_dir }}java_opatch_version.log"
 
