@@ -237,6 +237,6 @@ MIT — see [LICENSE](LICENSE).
 ## Related write-up
 
 Full breakdown of the business context, architecture decisions, and
-patching gotchas: 
+patching gotchas: https://www.vikepmlab.com/automating-hyperion-on-prem-patching-for-oracles-new-monthly-cspu-cadence/
    
 
