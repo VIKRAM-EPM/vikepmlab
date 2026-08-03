@@ -120,11 +120,11 @@ Email is sent via Python's built-in `smtplib` — free, no API key, no subscript
 
 ## Month-end close window usage
 
-Many organizations run month-end close over several days — commonly "business day 1 through 5" (**BD1–BD5**) or "calendar day 1 through 10" — with data reloading daily as adjustments land. Running this pipeline **once per business day** throughout that window (via Task Scheduler, cron, Airflow, etc.), rather than only weekly, catches discrepancies while there's still time to fix them.
+Many organizations run month-end close over several days — commonly "business day 1 through 5" (**BD1–BD5**) or "calendar day 1 through 10" — with data reloading daily as adjustments land. Running this pipeline **once per business day** throughout that window, rather than only weekly, catches discrepancies while there's still time to fix them.
 
-During the close window:
-- Use a short `--weeks 1` or `--weeks 2` on the extract scripts, since you mainly care about the period that's still settling, not weeks that are already final.
-- Set `RECON_CLOSE_DAY` on `reconcile.py` (e.g. `RECON_CLOSE_DAY=BD3`) so each day's email subject and report title are labeled distinctly — otherwise several days' emails look identical in your inbox.
+### Manual usage
+
+During the close window, run each script with a short `--weeks 1` (you mainly care about the period that's still settling, not weeks that are already final) and set `RECON_CLOSE_DAY` so each day's email subject and report title are labeled distinctly — otherwise several days' emails look identical in your inbox:
 
 ```bash
 export RECON_CLOSE_DAY="BD3"
@@ -133,6 +133,42 @@ python SourceOfTruthExtract.py --weeks 1
 python reconcile.py
 ```
 
+### Fully automated: `run_daily_recon.ps1`
+
+Manually setting `RECON_CLOSE_DAY` every morning doesn't scale, so the repo includes a PowerShell wrapper that **calculates which business day it is automatically** and runs the whole pipeline — this is the file you actually schedule, not the three Python scripts individually.
+
+**Worked example** — say BD1 (the first day of your close window) is Monday, August 3, and your close spans 8 business days:
+
+| Business Day | Calendar Date |
+|---|---|
+| BD1 | Mon, Aug 3 |
+| BD2 | Tue, Aug 4 |
+| BD3 | Wed, Aug 5 |
+| BD4 | Thu, Aug 6 |
+| BD5 | Fri, Aug 7 |
+| BD6 | Mon, Aug 10 *(weekend skipped)* |
+| BD7 | Tue, Aug 11 |
+| BD8 | Wed, Aug 12 |
+
+Only two values in `run_daily_recon.ps1` change per close cycle — everything else (EPM/source/SMTP config) stays fixed for the whole window:
+
+```powershell
+$CloseStartDate = Get-Date "2026-08-03"   # BD1 for this close cycle
+$MaxBusinessDay = 8                        # BD1 through BD8
+```
+
+The script counts weekdays between `$CloseStartDate` and today, sets `RECON_CLOSE_DAY` accordingly, and runs all three scripts with `--weeks 1`. Outside the configured window (weekends, before BD1, or past BD8) it exits immediately without doing anything — so it's safe to schedule it to fire every weekday indefinitely.
+
+**Scheduling it (Windows Task Scheduler):**
+1. **Create Basic Task** → **Trigger**: Weekly → check only Mon–Fri
+2. **Time**: right after your data load finishes each day (e.g. 7:30 AM if the load completes by 7:00 AM)
+3. **Action**: Start a program
+   - Program: `powershell.exe`
+   - Arguments: `-ExecutionPolicy Bypass -File "C:\path\to\run_daily_recon.ps1"`
+   - Start in: the folder containing all four files
+
+> **Caveat:** this assumes your close calendar is always "N consecutive weekdays starting on a fixed date." If your organization's close calendar has exceptions (a holiday mid-window, a shifted start date some months), the business-day math won't account for that automatically — treat it as a starting point, not a guarantee for every fiscal calendar.
+
 ---
 
 ## Repo contents
@@ -140,7 +176,8 @@ python reconcile.py
 ```
 EPMDataExtract.py          # Pulls & normalizes EPM Cloud data
 SourceOfTruthExtract.py    # Pulls & normalizes source-of-truth data
-reconcile.py                # Reconciles both sides and emails the report
+reconcile.py               # Reconciles both sides and emails the report
+run_daily_recon.ps1        # Wrapper for automated month-end close scheduling
 README.md                  # You are here
 ```
 
