@@ -19,10 +19,6 @@ Bash to adapt this to your own job.
 | `backup_notifier.py` | Runs the backup script, parses its status, sends the email |
 | `backup_script_template.sh` | Example backup script following the expected contract — replace the `TODO` block with your real backup command(s) |
 
-No `requirements.txt` — `configparser`, `smtplib`, and `email` are all
-part of the Python standard library, so there's nothing to `pip install`.
-Any Python 3 install (3.6+) already has everything this needs.
-
 ## Two ways organizations send email
 
 If you're deploying this at work rather than testing with a personal
