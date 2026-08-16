@@ -2,6 +2,18 @@
 # =============================================================================
 # backup_notifier.py
 #
+# Author     : Vikram Kumar (Vik)
+# Created    : 2026-08-16
+# Tested     :  Yes, local + cron
+# Deployed   : Non-Prod and Prod
+#
+# Disclaimer : Provided "as is", without warranty of any kind. Review and
+#              test thoroughly in a non-production environment before
+#              relying on it — you are responsible for verifying this
+#              script's behavior against your own SMTP provider and
+#              backup job before deployment.
+# =============================================================================
+#
 # Generic backup-job wrapper:
 #   1. Runs any backup script you point it at
 #   2. Reads the JSON status file that script produces
