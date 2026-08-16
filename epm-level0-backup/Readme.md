@@ -1,15 +1,24 @@
-# backup-notifier
+# epm-level0-backup-notifier
 
-A small, dependency-free pattern for wrapping any backup/export job with:
+A small, dependency-free pattern for running an Oracle EPM Cloud Level0
+backup — via EPM Automate, for any mix of BSO, Hybrid, or ASO cubes —
+with:
 
 - structured logging
 - a machine-readable JSON status report
 - an HTML email summary — sent with plain `smtplib`, no third-party email
   service or API key required
 
-Everything environment-specific (paths, targets, email addresses, SMTP
-server) lives in `config.ini`. You shouldn't need to edit the Python or
-Bash to adapt this to your own job.
+The email/notification layer (`backup_notifier.py`) is generic and
+doesn't know anything about EPM specifically — it just runs a script and
+emails whatever JSON status that script produces. The backup logic
+itself (`epm_level0_backup.sh`) is EPM Automate-specific by design,
+since that's the actual tool doing the work.
+
+Everything environment-specific (paths, cubes, email addresses, SMTP
+server) lives in `config.ini` and the CONFIGURATION block at the top of
+`epm_level0_backup.sh`. You shouldn't need to edit the rest of either
+file to adapt this to your own EPM environment.
 
 ## Files
 
@@ -17,7 +26,11 @@ Bash to adapt this to your own job.
 |---|---|
 | `config.ini` | Every setting you'll actually touch |
 | `backup_notifier.py` | Runs the backup script, parses its status, sends the email |
-| `backup_script_template.sh` | Example backup script following the expected contract — replace the `TODO` block with your real backup command(s) |
+| `epm_level0_backup.sh` | Runs a real EPM Automate Level0 export + download for any list of cubes (BSO, Hybrid, or ASO) |
+
+No `requirements.txt` — `configparser`, `smtplib`, and `email` are all
+part of the Python standard library, so there's nothing to `pip install`.
+Any Python 3 install (3.6+) already has everything this needs.
 
 ## Two ways organizations send email
 
@@ -107,11 +120,19 @@ your email setup works before wiring in anything real.
    the error printed will tell you which piece to check — see
    "Troubleshooting" below.
 
-6. **Once email works, try it against the real (template) backup script:**
-   - **macOS/Linux:** the template is Bash, so it runs natively.
+6. **Fill in `epm_level0_backup.sh`'s CONFIGURATION section:**
+   `EPM_BIN`, `APP_URL`, `USERNAME`, `PASSWORD` (the path to an encrypted
+   password file — create one with `epmautomate encrypt`, never a plain
+   password), and the `CUBES` array. `CUBES` can mix BSO, Hybrid, and
+   ASO cubes freely — the Level0 export command works the same way for
+   all three (Oracle's docs specify `level=0` is valid for both ASO and
+   BSO/Hybrid cubes; only `level=All` is BSO/Hybrid-only, and this
+   script doesn't use it).
+
+7. **Point `config.ini`'s `backup_script` at its full path, then run it:**
+   - **macOS/Linux:** Bash is native.
      ```bash
-     chmod +x backup_script_template.sh
-     # point backup_script in my_config.ini at its full path, then:
+     chmod +x epm_level0_backup.sh
      python3 backup_notifier.py --config my_config.ini
      ```
    - **Windows:** `backup_notifier.py` invokes the backup script with
@@ -119,16 +140,35 @@ your email setup works before wiring in anything real.
      [WSL](https://learn.microsoft.com/windows/wsl/install) or Git Bash.
      Everything else (the Python side) runs natively on Windows either way.
 
-7. **Adapt `backup_script_template.sh`** — replace the `TODO` block with
-   whatever actually produces your backup (a database dump, a cloud
-   export, an rsync, etc). Keep the JSON status contract (see below) and
-   everything else — logging, retention purge, status reporting — works
-   unmodified.
-
 8. **Once you're happy with it, wire it into cron / a scheduler:**
    ```
    0 2 * * * cd /path/to/backup-notifier && python3 backup_notifier.py --config my_config.ini >> /path/to/logs/cron.log 2>&1
    ```
+
+## Why the script clears the EPM outbox before each export
+
+`exportEssbaseData` writes its zip into the EPM Cloud application's
+outbox — it doesn't get deleted automatically after you download it.
+Left alone, that outbox accumulates a Level0 export zip per cube per
+run, indefinitely.
+
+That matters for more than just tidiness. The outbox is shared storage
+against your EPM Cloud instance, and a growing pile of old export files
+in it:
+- eats into your application's storage allocation over time
+- slows down anything that lists or scans the outbox (including this
+  script's own `listfiles` verification step, and Inbox/Outbox Explorer
+  in the UI)
+- risks a stale file with the same name silently sitting there from a
+  failed prior run, which can make it unclear whether a fresh export
+  actually succeeded
+
+That's why `epm_level0_backup.sh` runs a `deletefile` on each cube's
+expected outbox zip *before* running that cube's export (the
+`PRE-STEP` block), rather than relying on `exportEssbaseData` to
+overwrite it cleanly. It's a small step, but it keeps the outbox at a
+predictable, minimal footprint run over run instead of growing
+unbounded — worth keeping even if you adapt this script further.
 
 ## Troubleshooting
 
@@ -142,7 +182,8 @@ your email setup works before wiring in anything real.
 
 ## The status JSON contract
 
-Your backup script must:
+`epm_level0_backup.sh` already writes JSON in this shape, but if you
+adapt the backup script further, keep the contract:
 - print the **path to a JSON status file as the last line of stdout**
 - write that JSON in this shape:
 
@@ -155,23 +196,24 @@ Your backup script must:
   "retention_days": 90,
   "log_file": "/path/to/logs/run.log",
   "purge_count": 2,
-  "targets": [
+  "cubes": [
     {
-      "name": "database_prod",
+      "cube": "SALRPT",
       "status": "SUCCESS",
       "started": "02:00:00",
       "completed": "02:05:00",
       "elapsed": "5.00mins",
-      "local_file": "database_prod_backup.zip",
+      "local_file": "SALRPT_level0_backup.zip",
       "file_size": "120MB",
-      "notes": "Backup completed successfully"
+      "notes": "Backup downloaded successfully — zip retained in EPM outbox"
     }
   ]
 }
 ```
 
 `backup_notifier.py` reads this and renders it into the HTML report —
-add or remove targets freely, the table just grows/shrinks with them.
+add or remove cubes freely in the `CUBES` array, the table just
+grows/shrinks with them.
 
 ## Before you make anything public
 
