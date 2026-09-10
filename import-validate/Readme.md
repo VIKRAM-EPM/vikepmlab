@@ -30,6 +30,47 @@ Integration once you're confident it'll succeed.
 
 ---
 
+## Why this is fast
+
+Oracle's own documentation describes Data Integration's internal
+import/validate flow as a multi-step process built around relational
+staging tables: the file is staged and loaded into a `TDATASEG_T` table,
+mapping rules are processed, prior integrations in `TDATASEG` are cleaned
+up, the mapping results are copied from `TDATASEG_T` into `TDATASEG`, and
+only then is validation run against that staged data. Oracle's `TDATASEG`
+reference table also notes that a large `TDATASEG` table can slow down
+query performance during a load — the more rows staged, the heavier that
+process gets.
+
+In other words, **every row of your file gets physically written into a
+relational table, then copied again to a second table**, with validation
+running as a database operation against that full row-level data.
+
+This pipeline skips staging entirely. `importStep.py` scans your file
+directly with DuckDB and extracts only the **distinct dimension values** —
+typically a handful of unique strings per column, regardless of whether
+your file has a thousand rows or ten million. `validator.py` then checks
+that small, already-deduplicated set against EPM. The amount of data
+actually being validated has nothing to do with your file's row count —
+it's bounded by how many *unique* members each dimension actually has.
+
+That's the core reason this is fast for a pre-flight check: no staging
+table writes, no row-by-row database operations, and validation work that
+scales with dimension cardinality instead of file size.
+
+**One honest caveat:** this isn't a benchmarked "N times faster" claim, and
+it isn't a replacement for Data Integration's full capabilities — the
+staging-table approach exists for good reasons, including a complete audit
+trail and drill-through access in Workbench, which this lightweight
+pipeline doesn't attempt to replicate. Think of this as a fast sanity check
+you run *before* committing to a full Data Integration load, not a
+substitute for what Data Integration does once a load is actually underway.
+
+*Sources: [Administering Data Integration](https://docs.oracle.com/en/cloud/saas/enterprise-performance-management-common/diepm/toc.htm),
+[TDATASEG Table Reference](https://docs.oracle.com/cloud/latest/epm-common/ERPIA/toc.htm)*
+
+---
+
 ## How it works
 
 ```
