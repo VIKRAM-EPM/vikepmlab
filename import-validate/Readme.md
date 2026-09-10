@@ -58,7 +58,7 @@ That's the core reason this is fast for a pre-flight check: no staging
 table writes, no row-by-row database operations, and validation work that
 scales with dimension cardinality instead of file size.
 
-**One honest caveat:** this isn't a benchmarked "N times faster" claim, and
+**My honest caveat:** this isn't a benchmarked "N times faster" claim, and
 it isn't a replacement for Data Integration's full capabilities — the
 staging-table approach exists for good reasons, including a complete audit
 trail and drill-through access in Workbench, which this lightweight
