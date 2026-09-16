@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>NASDAQ Data-Quality Agent</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --border: #2a2e3a;
+    --text: #e6e8ee; --muted: #8b90a0; --accent: #6ea8fe;
+    --purple: #b892ff; --green: #4ade80; --yellow: #fbbf24; --red: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 24px; max-width: 900px; margin-inline: auto;
+  }
+  h1 { font-size: 1.3rem; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin-bottom: 20px; font-size: 0.9rem; }
+  form {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+    background: var(--panel); padding: 14px; border-radius: 10px; border: 1px solid var(--border);
+  }
+  input, select, button {
+    background: #0f1117; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 0.9rem;
+  }
+  input[name="ticker"] { width: 100px; text-transform: uppercase; }
+  input[name="fiscal_year"] { width: 90px; }
+  button {
+    background: var(--accent); color: #0f1117; border: none; font-weight: 600; cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .quickpicks { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+  .quickpicks button { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; font-size: 0.8rem; }
+  #trace { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap;
+    animation: fadein 0.25s ease-out;
+  }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .card .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; font-weight: 700; }
+  .reasoning { border-left: 3px solid var(--accent); }
+  .reasoning .label { color: var(--accent); }
+  .tool_call { border-left: 3px solid var(--purple); font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem; }
+  .tool_call .label { color: var(--purple); }
+  .tool_result { border-left: 3px solid var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; color: var(--muted); }
+  .tool_result .label { color: var(--muted); }
+  .verdict { border-left: 4px solid var(--green); }
+  .verdict.likely_error { border-left-color: var(--red); }
+  .verdict.needs_human_review { border-left-color: var(--yellow); }
+  .verdict .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem;
+    font-weight: 700; text-transform: uppercase; margin-right: 8px;
+  }
+  .verdict.legitimate_business_event .badge, .verdict.likely_legitimate .badge { background: #14331f; color: var(--green); }
+  .verdict.likely_error .badge { background: #3a1c1c; color: var(--red); }
+  .verdict.needs_human_review .badge { background: #3a2f10; color: var(--yellow); }
+  #status { color: var(--muted); font-size: 0.85rem; margin: 8px 0; min-height: 1.2em; }
+</style>
+</head>
+<body>
+  <h1>NASDAQ Financial Data-Quality Agent</h1>
+  <div class="sub">Live demo — Claude Agent SDK with custom MCP tools over SEC EDGAR-derived fundamentals</div>
+
+  <form id="form">
+    <input name="ticker" placeholder="TICKER" value="ABUS" required />
+    <input name="fiscal_year" type="number" value="2026" required />
+    <select name="fiscal_period">
+      <option>Q1</option><option>Q2</option><option>Q3</option><option>FY</option>
+    </select>
+    <button type="submit" id="submitBtn">Investigate</button>
+  </form>
+
+  <div class="quickpicks">
+    <span style="color: var(--muted); font-size: 0.8rem; align-self: center;">Known interesting cases:</span>
+    <button type="button" data-t="AACI" data-y="2026" data-p="Q2">AACI 2026 Q2 (SPAC, balance mismatch)</button>
+    <button type="button" data-t="ABUS" data-y="2026" data-p="Q1">ABUS 2026 Q1 (338x revenue spike)</button>
+    <button type="button" data-t="AGNC" data-y="2025" data-p="Q1">AGNC 2025 Q1 (REIT, negative revenue)</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="trace"></div>
+
+<script>
+const form = document.getElementById('form');
+const trace = document.getElementById('trace');
+const status = document.getElementById('status');
+const submitBtn = document.getElementById('submitBtn');
+let currentSource = null;
+
+function addCard(type, html, extraClass) {
+  const div = document.createElement('div');
+  div.className = `card ${type}${extraClass ? ' ' + extraClass : ''}`;
+  div.innerHTML = html;
+  trace.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Minimal markdown-ish rendering: **bold**, ## headers, - bullets, line breaks
+function renderText(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/^## (.+)$/gm, '<strong style="font-size:1.05em">$1</strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/^- (.+)$/gm, '&nbsp;&nbsp;• $1');
+  return html;
+}
+
+function handleEvent(ev) {
+  switch (ev.type) {
+    case 'start':
+      status.textContent = `Investigating ${ev.ticker} FY${ev.fiscal_year} ${ev.fiscal_period}...`;
+      break;
+    case 'reasoning':
+      addCard('reasoning', `<div class="label">Reasoning</div>${renderText(ev.text)}`);
+      break;
+    case 'tool_call':
+      if (ev.name.endsWith('propose_verdict')) {
+        const v = ev.input;
+        addCard('verdict', `
+          <div class="label">Proposed Verdict</div>
+          <span class="badge">${escapeHtml(v.verdict)}</span>
+          <span style="color:var(--muted)">confidence: ${escapeHtml(v.confidence)}</span>
+          <div style="margin-top:8px">${renderText(v.reasoning)}</div>
+          <div style="margin-top:8px; color:var(--muted); font-size:0.82em">Issues: ${escapeHtml(v.issues_found)}</div>
+        `, v.verdict);
+      } else {
+        const shortName = ev.name.split('__').pop();
+        addCard('tool_call', `<div class="label">Tool Call</div>${escapeHtml(shortName)}(${escapeHtml(JSON.stringify(ev.input))})`);
+      }
+      break;
+    case 'tool_result':
+      if (!ev.content || !ev.content.includes('Verdict recorded')) {
+        addCard('tool_result', `<div class="label">Tool Result</div>${escapeHtml(ev.content).slice(0, 600)}`);
+      }
+      break;
+    case 'done':
+      status.textContent = `Done (stop_reason: ${ev.stop_reason}, turns: ${ev.num_turns})`;
+      submitBtn.disabled = false;
+      // EventSource auto-reconnects on any connection close, including a
+      // normal successful finish, unless we close it explicitly -- that
+      // was silently firing duplicate investigations behind the scenes.
+      if (currentSource) { currentSource.close(); currentSource = null; }
+      break;
+    case 'error':
+      addCard('tool_result', `<div class="label" style="color:var(--red)">Error</div>${escapeHtml(ev.message)}`);
+      submitBtn.disabled = false;
+      if (currentSource) { currentSource.close(); currentSource = null; }
+      break;
+  }
+}
+
+function runInvestigation(ticker, fiscalYear, fiscalPeriod) {
+  if (currentSource) currentSource.close();
+  trace.innerHTML = '';
+  submitBtn.disabled = true;
+  status.textContent = 'Connecting...';
+
+  const params = new URLSearchParams({ ticker, fiscal_year: fiscalYear, fiscal_period: fiscalPeriod });
+  currentSource = new EventSource(`/api/investigate?${params}`);
+  currentSource.onmessage = (e) => handleEvent(JSON.parse(e.data));
+  currentSource.onerror = () => {
+    status.textContent = 'Connection closed.';
+    submitBtn.disabled = false;
+    if (currentSource) { currentSource.close(); currentSource = null; }
+  };
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const fd = new FormData(form);
+  runInvestigation(fd.get('ticker').toUpperCase(), fd.get('fiscal_year'), fd.get('fiscal_period'));
+});
+
+document.querySelectorAll('.quickpicks button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    form.ticker.value = btn.dataset.t;
+    form.fiscal_year.value = btn.dataset.y;
+    form.fiscal_period.value = btn.dataset.p;
+    runInvestigation(btn.dataset.t, btn.dataset.y, btn.dataset.p);
+  });
+});
+</script>
+</body>
+</html>
