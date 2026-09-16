@@ -17,10 +17,10 @@ Instead, Claude is given four investigative tools and a fifth tool to
 record its conclusion, and *decides itself*, at runtime, which tools to
 call, in what order, and when it has enough evidence -- based on what
 each tool call returns, not on hardcoded control flow. The reasoning
-trace (see `agent.py`'s `_print_trace`) shows this decision-making
-directly: you can watch it check a balance sheet, see a mismatch, decide
-on its own to pull the company's history, and revise or confirm its
-conclusion based on what it finds there.
+trace (see `agent.py`'s `investigate_events` generator) shows this
+decision-making directly: you can watch it check a balance sheet, see
+a mismatch, decide on its own to pull the company's history, and
+revise or confirm its conclusion based on what it finds there.
 
 ## Architecture
 
@@ -93,9 +93,25 @@ page built from a real captured run instead.
 | AACI | 2026 Q2 | SPAC with ~$251M balance-sheet "mismatch" -- actually a trust-liability structure, not an error |
 | ABUS | 2026 Q1 | Revenue jumps 338x quarter-over-quarter alongside a matching net-income and equity jump -- looks like a data error but is very likely a real one-time event (litigation/licensing) |
 | AGNC | 2025 Q1 | REIT with negative revenue figures and large swings -- normal for the business model, not a parsing error |
+| TXN | 2026 Q2 | Household name (Texas Instruments) with a consistent ~2x EPS gap across every period checked -- agent traced it to the dataset's `shares_outstanding` field being systematically mis-scaled, not bad reported earnings |
+| AAPL | 2026 Q3 | Household name (Apple), completely clean -- included deliberately to show the agent doesn't just flag everything; it correctly stops after 3 clean checks with no forced anomaly |
 
 These are deliberately chosen because a naive rule-based validator gets
-all three wrong in one direction or the other.
+most of them wrong in one direction or the other (or, for AAPL, correctly
+right -- but a rigged demo that always finds a problem would be as
+unconvincing as one that never does).
+
+Run all five in sequence with `python agent.py --eval`.
+
+## Static replay page (no install required)
+
+`demo.html` is a self-contained, no-backend page that replays the real,
+captured trace for all five cases above, step by step, with a case
+selector. It needs no Python, no Claude login, and no internet
+dependency once loaded -- built for demoing on a machine that can't run
+the live version (e.g. a locked-down work laptop), or for linking
+directly from a resume/portfolio. It's explicit on-page that it's a
+captured replay, not a live connection.
 
 ## Mapping to agentic AI / solution delivery skills
 
