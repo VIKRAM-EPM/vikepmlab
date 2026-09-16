@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NASDAQ Data-Quality Agent — Demo Replay</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --border: #2a2e3a;
+    --text: #e6e8ee; --muted: #9096a8; --accent: #6ea8fe;
+    --purple: #b892ff; --green: #4ade80; --yellow: #fbbf24; --red: #f87171;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f5f6f8; --panel: #ffffff; --border: #dde1e8;
+      --text: #1a1d27; --muted: #666c7c; --accent: #2563eb;
+      --purple: #7c3aed; --green: #16a34a; --yellow: #b45309; --red: #dc2626;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f6f8; --panel: #ffffff; --border: #dde1e8;
+    --text: #1a1d27; --muted: #666c7c; --accent: #2563eb;
+    --purple: #7c3aed; --green: #16a34a; --yellow: #b45309; --red: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
+  body {
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 4px; }
+  .banner {
+    background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 10px 14px; font-size: 0.83rem; color: var(--muted);
+    margin: 16px 0 20px; line-height: 1.5;
+  }
+  .banner strong { color: var(--text); }
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  button {
+    background: var(--accent); color: #0f1117; border: none; border-radius: 6px;
+    padding: 9px 16px; font-weight: 600; font-size: 0.88rem; cursor: pointer;
+  }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  #status { color: var(--muted); font-size: 0.85rem; margin-left: 4px; }
+  #trace { display: flex; flex-direction: column; gap: 10px; min-height: 60px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; font-size: 0.9rem; line-height: 1.55; white-space: pre-wrap;
+    animation: fadein 0.3s ease-out; overflow-x: auto;
+  }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; font-weight: 700; }
+  .system { border-left: 3px solid var(--border); color: var(--muted); font-size: 0.82rem; }
+  .system .label { color: var(--muted); }
+  .reasoning { border-left: 3px solid var(--accent); }
+  .reasoning .label { color: var(--accent); }
+  .tool_call { border-left: 3px solid var(--purple); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82rem; }
+  .tool_call .label { color: var(--purple); }
+  .verdict { border-left: 4px solid var(--green); }
+  .verdict.likely_error { border-left-color: var(--red); }
+  .verdict.needs_human_review { border-left-color: var(--yellow); }
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.72rem;
+    font-weight: 700; text-transform: uppercase; margin-right: 8px;
+  }
+  .verdict.legitimate_business_event .badge { background: rgba(74,222,128,0.15); color: var(--green); }
+  .verdict.likely_error .badge { background: rgba(248,113,113,0.15); color: var(--red); }
+  .verdict.needs_human_review .badge { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .arch {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin-top: 28px; font-size: 0.85rem; color: var(--muted); line-height: 1.6;
+  }
+  .arch strong { color: var(--text); }
+  .arch code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 0.82em; }
+  footer { text-align: center; color: var(--muted); font-size: 0.78rem; margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔎 NASDAQ Financial Data-Quality Agent</h1>
+  <div class="sub">Claude Agent SDK + custom MCP tools, investigating SEC EDGAR-derived fundamentals</div>
+
+  <div class="banner">
+    <strong>This is a captured replay, not a live agent.</strong> Every event below is the real,
+    unedited output from an actual run of the agent — replayed here step-by-step so the reasoning
+    is easy to follow, since the live version requires a Claude subscription login that only
+    exists on the author's personal machine.
+  </div>
+
+  <div class="controls" style="margin-bottom: 8px;">
+    <span style="color: var(--muted); font-size: 0.85rem; align-self: center;">Case:</span>
+    <button type="button" class="secondary case-btn" data-case="ABUS">ABUS 2026 Q1 (338x revenue spike)</button>
+    <button type="button" class="secondary case-btn" data-case="AACI">AACI 2026 Q2 (SPAC, balance mismatch)</button>
+    <button type="button" class="secondary case-btn" data-case="AGNC">AGNC 2025 Q1 (REIT, revenue swings)</button>
+    <button type="button" class="secondary case-btn" data-case="TXN">TXN 2026 Q2 (EPS field scaling issue)</button>
+    <button type="button" class="secondary case-btn" data-case="AAPL">AAPL 2026 Q3 (clean, no issues)</button>
+  </div>
+
+  <div class="controls">
+    <button id="playBtn">▶ Play replay</button>
+    <button id="skipBtn" class="secondary">Skip to end</button>
+    <button id="resetBtn" class="secondary">Reset</button>
+    <span id="status"></span>
+  </div>
+
+  <div id="trace"></div>
+
+  <div class="arch">
+    <strong>How this works:</strong> Claude is given four investigative tools
+    (<code>check_balance_sheet</code>, <code>check_revenue_continuity</code>,
+    <code>check_eps_consistency</code>, <code>get_period_history</code>) and one
+    reporting tool (<code>propose_verdict</code>) via an in-process MCP server.
+    Nothing about the sequence below is hardcoded — Claude decides which tools to
+    call, in what order, and when it has enough evidence, based on what each tool
+    call returns. Each case below shows a different kind of judgment call: a SPAC's
+    trust-accounting equity structure, a mortgage REIT's mark-to-market revenue
+    volatility, and a biotech's one-time licensing spike — three different
+    "looks like an error but isn't" patterns.
+  </div>
+
+  <footer>NASDAQ Financial Data-Quality Agent — demo replay</footer>
+</div>
+
+<script>
+const CASES = {
+ABUS: [
+  { type: "system", text: "Discovering available tools (check_balance_sheet, check_revenue_continuity, check_eps_consistency, get_period_history, propose_verdict)..." },
+  { type: "tool_call", name: "check_balance_sheet", input: { ticker: "ABUS", fiscal_year: 2026, fiscal_period: "Q1" } },
+  { type: "tool_call", name: "check_revenue_continuity", input: { ticker: "ABUS" } },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "ABUS", fiscal_year: 2026, fiscal_period: "Q1" } },
+  { type: "tool_call", name: "get_period_history", input: { ticker: "ABUS" } },
+  { type: "reasoning", text: `## Investigation Summary — ABUS, FY2026 Q1
+
+**1. Balance sheet check:** Assets ($277.16M) = Liabilities ($16.99M) + Equity ($260.18M) exactly — 0.0% difference. No balance sheet integrity issue.
+
+**2. Revenue continuity:** Flagged a massive swing — revenue jumped from $529K (2025-Q3) to $179.13M (2026-Q1), a 338x increase, then dropped back to $1.01M the following quarter (2026-Q2). This is by far the largest flag from any check.
+
+**3. EPS consistency:** Reported EPS ($0.88) vs. implied EPS ($0.8616) — within tolerance, not concerning on its own.
+
+**4. Period history (pulled because of the revenue flag):** Arbutus Biopharma Corp is a clinical-stage biotech with a long baseline of small, lumpy revenue (~$1–2M/quarter, driven by collaboration agreements) and consistent quarterly net losses (roughly -$18M to -$25M) — typical R&D burn. Notably:
+- Q2 2025 already showed a smaller version of this same pattern: revenue spiked to $10.7M and net income briefly went positive ($2.5M), before reverting to a loss next quarter — evidence the company periodically books large one-time collaboration/licensing/milestone revenue.
+- Q1 2026: revenue spikes to $179.1M, net income jumps to +$169.7M. Total assets grow by ~$179.5M (from $97.7M to $277.2M) and equity grows by ~$182.8M (from $77.4M to $260.2M) — both increases closely track the net income booked that quarter, which is exactly what you'd expect from a large one-time cash/receivable-generating licensing or milestone payment flowing through the income statement into equity.
+- Q2 2026 reverts immediately to baseline: revenue $1.01M, net income back to a loss of -$5.1M — consistent with the company returning to normal R&D-burn operations after a one-off event, mirroring the Q2→Q3 2025 pattern.
+
+**Reasoning:** The revenue/net-income spike is extreme in magnitude, but it is internally consistent across all three statements (balance sheet ties out perfectly, EPS reconciles, and the asset/equity increase matches the net income recognized), and it fits a recurring pattern already visible in this company's history (episodic large licensing/milestone revenue for a clinical-stage biotech, followed by reversion to baseline). This looks like a genuine one-time corporate event (e.g., a large licensing/milestone deal) rather than a data pipeline error. I don't have an external filing to confirm the specific transaction, so I'm not at full confidence, but the internal consistency is strong evidence against a data error.` },
+  { type: "tool_call", name: "propose_verdict", input: {
+      ticker: "ABUS", fiscal_year: 2026, fiscal_period: "Q1",
+      verdict: "legitimate_business_event", confidence: "medium",
+      reasoning: "Balance sheet balances exactly (0.0% diff) and EPS reconciles within the expected period-end-shares caveat, so no arithmetic/data integrity issue there. The revenue_continuity check flags an extreme swing: revenue jumped 338x from $529K (2025-Q3) to $179.1M (2026-Q1), then collapsed to $1.01M the next quarter. Pulling get_period_history shows this is not an isolated glitch but an amplified instance of a recurring pattern for Arbutus Biopharma (a clinical-stage biotech): baseline revenue is small (~$1-2M/quarter) with steady R&D losses (-$18M to -$25M/quarter), punctuated occasionally by large one-time collaboration/licensing revenue (a smaller precedent occurred in 2025-Q2: revenue spiked to $10.7M with net income briefly positive at $2.5M, then reverted). In 2026-Q1, net income jumps to +$169.7M, and both total assets (+~$179.5M) and stockholders' equity (+~$182.8M) grow by amounts closely tracking that net income -- internally consistent with a real one-time cash-generating event (e.g., a large licensing/milestone payment) flowing through the income statement into the balance sheet, not a data-entry artifact. The very next quarter (2026-Q2) reverts cleanly to baseline revenue and a loss, mirroring the 2025-Q3 reversion after the smaller spike. The magnitude here is unprecedented for this company, so I'd still want a human to cross-check against the actual 10-Q/8-K disclosure for the specific transaction, but nothing in the internal data suggests corruption or miskeying -- everything ties out and fits the company's established behavioral pattern.",
+      issues_found: "Extreme one-quarter revenue/net-income spike (338x revenue increase in 2026-Q1 vs prior quarter, reverting fully by 2026-Q2) driven by an apparent large one-time collaboration/licensing/milestone payment. Balance sheet and EPS check out cleanly; the asset/equity growth in the quarter closely matches the reported net income, supporting internal consistency. No data error identified, but given the unprecedented magnitude relative to this company's own history, a human should confirm against the source 10-Q filing to identify and validate the underlying transaction."
+  }},
+  { type: "reasoning", text: `**Verdict: Legitimate business event (medium confidence)** — recorded for human review.
+
+Summary of findings for ABUS, FY2026 Q1:
+- **Balance sheet:** ties out exactly, no issue.
+- **EPS:** reconciles within expected tolerance, no issue.
+- **Revenue continuity:** flagged a huge 338x spike ($529K → $179.1M) that fully reverts the next quarter ($1.01M) — the headline anomaly.
+- **Period history:** shows this is an amplified version of a pattern the company already exhibits (small baseline biotech collaboration revenue with occasional large one-time milestone/licensing spikes, e.g. a smaller precedent in 2025-Q2). The Q1 2026 asset and equity growth (~$180M) closely tracks the reported net income (+$169.7M), which is internally consistent with a genuine one-time cash-generating event rather than a data-entry error, and the sharp reversion to baseline the following quarter matches the company's established behavior.
+
+I flagged medium (not high) confidence because the magnitude is unprecedented for this company — I'd recommend a human cross-check the actual 10-Q/8-K to confirm the specific transaction (e.g., a licensing or milestone deal), even though nothing in the numbers themselves suggests corruption or miskeying.` },
+  { type: "done", stop_reason: "end_turn" },
+],
+AACI: [
+  { type: "system", text: "Discovering available tools (check_balance_sheet, check_revenue_continuity, check_eps_consistency, get_period_history, propose_verdict)..." },
+  { type: "tool_call", name: "check_balance_sheet", input: { ticker: "AACI", fiscal_year: 2026, fiscal_period: "Q2" } },
+  { type: "tool_call", name: "check_revenue_continuity", input: { ticker: "AACI" } },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "AACI", fiscal_year: 2026, fiscal_period: "Q2" } },
+  { type: "tool_call", name: "get_period_history", input: { ticker: "AACI" } },
+  { type: "reasoning", text: `## Summary: AACI, FY2026 Q2 — Verdict candidate: Legitimate (confidence: medium-high)
+
+**What was flagged:**
+- Balance sheet identity fails badly: assets $252.49M vs. liabilities+equity only $0.92M (a ~99.6% gap)
+- Negative stockholders' equity (-$9.38M)
+- Revenue missing (NaN) and EPS check returned insufficient data
+
+**Why this doesn't look like a data error:**
+- The ticker resolves to **Armada Acquisition Corp. III** — a SPAC. The ~$250M sitting in a trust account backing Class A "shares subject to possible redemption" is classified under SEC rules as **temporary/mezzanine equity**, a line item that sits between liabilities and permanent equity on the real balance sheet. This dataset apparently doesn't expose that line, so total_liabilities + stockholders_equity mechanically comes up ~$250M short — expected, not a data-entry error.
+- get_period_history shows **Q1 2026 has the same pattern** almost exactly (assets $250.4M, liabilities $10.3M, equity -$9.1M, ~99.6% gap) — a stable structural feature of the filings, not a one-off glitch.
+- Net income grew from $423K (Q1) to $1.97M (Q2), consistent with rising trust-account interest income — a plausible trend for a pre-merger SPAC shell with no operating revenue (explaining the NaN revenue and the EPS check's insufficient data, since SPACs often have multi-class share structures that break simple EPS math).
+
+**Caveat:** only 2 quarters of history to confirm recurrence, and the mezzanine-equity line can't be directly verified since it isn't exposed by these tools -- flagged for human confirmation against the actual 10-Q.` },
+  { type: "tool_call", name: "propose_verdict", input: {
+      ticker: "AACI", fiscal_year: 2026, fiscal_period: "Q2",
+      verdict: "legitimate", confidence: "medium-high",
+      issues_found: "Balance sheet identity fails by ~99.6% ($251.6M gap: assets $252.49M vs liabilities+equity ~$0.92M), and stockholders' equity is negative (-$9.38M). Revenue is missing/NaN and EPS check had insufficient data.",
+      reasoning: "Company is Armada Acquisition Corp. III (ticker AACI) -- a SPAC. The huge assets-vs-(liabilities+equity) gap is consistent with SPAC trust accounting: the ~$250M held in trust backs Class A shares \"subject to possible redemption,\" which under SEC guidance (ASR 268 / EITF D-98) is classified as temporary/mezzanine equity -- sitting between liabilities and permanent stockholders' equity on the actual balance sheet. This dataset's schema appears to only capture total_liabilities and permanent stockholders_equity, omitting the temporary-equity line, which mechanically produces a large 'unexplained' gap and negative permanent equity. This is not unique to Q2: get_period_history shows Q1 2026 has the nearly identical pattern (assets $250.4M, liabilities $10.3M, equity -$9.1M, ~99.6% gap), so it's a stable, recurring structural feature of this company's filings rather than a one-off error. Net income is positive and grew from $423K (Q1) to $1.97M (Q2), consistent with trust-account interest income on a large cash balance -- a plausible, non-alarming trend for a pre-merger SPAC. Revenue being NaN/missing is also expected for a SPAC shell with no operating business, which explains why check_revenue_continuity had insufficient history and check_eps_consistency returned insufficient_data (SPACs often have complex multi-class share structures that break simple EPS = NI/shares math). I'm rating confidence medium-high rather than high because I only have 2 quarters of history to confirm the pattern is recurring rather than newly introduced, and I can't directly verify the temporary-equity line item since it isn't exposed by these tools -- a human with access to the actual 10-Q balance sheet should confirm the mezzanine-equity line reconciles the gap exactly."
+  }},
+  { type: "reasoning", text: `**Verdict: Legitimate (confidence: medium-high)** — recorded for human review.
+
+For AACI FY2026 Q2, the ~99.6% balance-sheet gap and negative equity both trace back to standard SPAC trust accounting (temporary/mezzanine equity not exposed by this dataset's schema), confirmed by the same pattern recurring in Q1 2026. Net income trend (rising trust interest income) and missing revenue/EPS data are both consistent with a pre-merger SPAC shell rather than a data pipeline error.` },
+  { type: "done", stop_reason: "end_turn" },
+],
+AGNC: [
+  { type: "system", text: "Discovering available tools (check_balance_sheet, check_revenue_continuity, check_eps_consistency, get_period_history, propose_verdict)..." },
+  { type: "tool_call", name: "check_balance_sheet", input: { ticker: "AGNC", fiscal_year: 2025, fiscal_period: "Q1" } },
+  { type: "tool_call", name: "check_revenue_continuity", input: { ticker: "AGNC" } },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "AGNC", fiscal_year: 2025, fiscal_period: "Q1" } },
+  { type: "tool_call", name: "get_period_history", input: { ticker: "AGNC" } },
+  { type: "reasoning", text: `## Investigation Summary — AGNC, FY2025 Q1
+
+**1. Balance sheet check:** Assets ($95.889B) = Liabilities ($85.847B) + Equity ($10.042B) exactly, 0% difference. No issue.
+
+**2. Revenue continuity check:** Flagged two swings — 2024-Q2→Q3 (-$3M → -$64M, ratio 21.3x) and 2024-Q3→2025-Q1 (-$64M → $159M, ratio -2.48x). These look alarming as raw ratios, but the underlying revenue figures are tiny and straddle zero.
+
+**3. EPS consistency check:** Reported basic EPS $0.02 vs. implied $0.0527 (diff $0.0327) — flagged as not exceeding tolerance by the tool itself. AGNC also carries substantial preferred stock, so net income available to common (after preferred dividends) legitimately diverges from a naive net_income/shares calc, on top of the tool's own weighted-average-vs-period-end-shares caveat.
+
+**4. Period history (why this was pulled):** AGNC is a mortgage REIT (agency MBS). Its "revenue" line under GAAP for these entities is typically net interest income plus/minus mark-to-market gains/losses on investments and hedges -- not a conventional sales figure. Looking across 2024 Q1 through 2026 Q2: revenues repeatedly flip sign near zero, and net income swings wildly too, without any corresponding balance-sheet inconsistency -- equity grows steadily and smoothly each quarter ($8.578B → $12.543B) even while revenue/net income gyrate. This is the classic signature of a mortgage REIT's interest-rate/hedge mark-to-market volatility, not a data-entry error. The "21x" and "-2.5x" ratios are just artifacts of dividing near-zero and sign-flipping numbers -- mathematically dramatic but economically small in absolute dollar terms relative to a company with ~$96B in assets.
+
+Given the balance sheet ties out exactly, the EPS gap is within the tool's own tolerance and explicable by preferred dividends, and the revenue swings are a small-dollar, sign-flipping pattern consistent across 9+ quarters for a mortgage REIT -- this looks like a legitimate business/accounting characteristic rather than a data error.` },
+  { type: "tool_call", name: "propose_verdict", input: {
+      ticker: "AGNC", fiscal_year: 2025, fiscal_period: "Q1",
+      verdict: "legitimate", confidence: "high",
+      reasoning: "Balance sheet balances exactly (0% diff, assets=liabilities+equity). EPS gap ($0.02 reported vs $0.0527 implied) is within the tool's own tolerance and is plausibly explained by preferred stock dividends reducing income available to common plus the known weighted-average-vs-period-end shares caveat. The revenue continuity flags (ratios of 21.3x and -2.48x) are artifacts of AGNC's revenue line swinging near zero and across sign (-$3M, -$64M, +$159M) rather than a real magnitude anomaly. AGNC is a mortgage REIT whose GAAP 'revenue' line reflects net interest income plus/minus mark-to-market gains/losses on its MBS portfolio and hedges, which is inherently volatile and frequently flips sign -- confirmed by get_period_history showing this same near-zero, sign-flipping revenue pattern and volatile net income (ranging from -$148M to +$1.67B) persisting consistently across 9+ quarters (2024 Q1 through 2026 Q2), all while stockholders' equity grows smoothly and balance sheets tie out every period. This is a structural characteristic of the business model, not a one-off data error.",
+      issues_found: "No balance sheet mismatch. EPS variance within tolerance, plausibly explained by preferred dividends. Revenue continuity tool flagged large ratio swings, but these stem from small-dollar, sign-flipping 'revenue' figures typical of a mortgage REIT's mark-to-market accounting, and the pattern is consistent across many quarters rather than isolated to this period -- no corrective action needed."
+  }},
+  { type: "reasoning", text: `## Conclusion: **Legitimate** (high confidence)
+
+For AGNC FY2025 Q1, none of the checks point to a real data-quality problem: balance sheet ties out exactly, the EPS gap is within tolerance and explicable by preferred dividends, and the flagged revenue-continuity ratios come from a "revenue" line that's small in absolute dollars and repeatedly flips sign -- confirmed as a **persistent pattern** across 9+ quarters (2024 Q1-2026 Q2), consistent with AGNC being a mortgage REIT whose GAAP revenue reflects net interest income plus mark-to-market gains/losses on its MBS/hedge portfolio. Equity grew smoothly and balance sheets balanced every single quarter, reinforcing that this is business volatility, not a bookkeeping error.` },
+  { type: "done", stop_reason: "end_turn" },
+],
+TXN: [
+  { type: "system", text: "Discovering available tools (check_balance_sheet, check_revenue_continuity, check_eps_consistency, get_period_history, propose_verdict)..." },
+  { type: "tool_call", name: "check_balance_sheet", input: { ticker: "TXN", fiscal_year: 2026, fiscal_period: "Q2" } },
+  { type: "tool_call", name: "check_revenue_continuity", input: { ticker: "TXN" } },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "TXN", fiscal_year: 2026, fiscal_period: "Q2" } },
+  { type: "tool_call", name: "get_period_history", input: { ticker: "TXN" } },
+  { type: "reasoning", text: "Let me check whether this EPS gap is a one-off or a consistent pattern by comparing against a couple of other TXN quarters." },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "TXN", fiscal_year: 2026, fiscal_period: "Q1" } },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "TXN", fiscal_year: 2025, fiscal_period: "Q2" } },
+  { type: "reasoning", text: `Now I have enough evidence to reason through this.
+
+**Balance sheet:** Assets ($35.882B) = Liabilities ($17.875B) + Equity ($18.007B) exactly, 0% difference. Equity of $18.007B is a step up from the prior few quarters (~$16.4–16.8B), but that tracks with the net income trajectory (Q1 2026 net income $1.545B → Q2 2026 $1.980B, the highest in the 10-period history), so it's consistent with retained-earnings growth, not an anomaly. Clean.
+
+**Revenue continuity:** No flags. Revenue has grown steadily each quarter (Q1'24 $3.66B → Q2'26 $5.46B) with no anomalous swings.
+
+**EPS consistency:** Reported basic EPS of $2.16 vs. implied EPS of $1.1373 from net_income / shares_outstanding — a ~90% gap, which on its face looks alarming. But checking history:
+- Q1 2026: reported $1.69 vs implied $0.887 (~90% gap)
+- Q2 2025: reported $1.42 vs implied $0.744 (~91% gap)
+- Q2 2026: reported $2.16 vs implied $1.137 (~90% gap)
+
+The gap is remarkably consistent (~2x) across every period checked, not a one-off spike for Q2 2026. Sanity-checking against real-world knowledge of TXN: the company's actual outstanding share count has been roughly ~910–915M shares for the last couple of years, and $1.980B net income / ~915M shares ≈ $2.16 — matching the *reported* EPS almost exactly. That implies the dataset's shares_outstanding field is itself inflated ~2x versus the real weighted-average count (a systemic field-definition/scaling issue), while the reported EPS figures look internally accurate. This is exactly the kind of consistent, cross-period pattern the process calls out as "check history before concluding" — and since it's identical in magnitude across three separate periods, it points to a dataset-wide quirk in one column rather than a Q2-2026-specific data error.
+
+Given: balance sheet is perfect, revenue is continuous with no flags, and the EPS gap is a stable systemic pattern (not unique to this period) whose direction/magnitude is explainable by a plausible shares_outstanding field issue rather than bad reported earnings — I'll record this period as legitimate/consistent with the company's normal pattern, while noting the systemic shares_outstanding caveat for whoever maintains that field.` },
+  { type: "tool_call", name: "propose_verdict", input: {
+      ticker: "TXN", fiscal_year: 2026, fiscal_period: "Q2",
+      verdict: "legitimate", confidence: "medium-high",
+      reasoning: "Balance sheet balances exactly (0% diff), and equity growth vs prior quarters tracks a genuine net income uptick (Q1'26 $1.545B -> Q2'26 $1.980B, the highest in the 10-quarter history), so no error there. Revenue continuity check returned no flags; TXN's revenue has grown steadily quarter over quarter with no unusual swings. The EPS check flagged a large gap (reported $2.16 vs implied $1.137), but get_period_history plus targeted EPS checks on Q1 2026 and Q2 2025 show the exact same ~90% gap in every period examined -- a stable, systemic pattern rather than an anomaly specific to Q2 2026. Cross-checking against real-world knowledge of TXN's actual share count (~910-915M shares), net income / real share count reproduces the *reported* EPS almost exactly, indicating the reported EPS figures are accurate and the dataset's shares_outstanding field is the one that's off (roughly 2x too high, likely a units/definition issue), consistently across periods -- not a period-specific data error.",
+      issues_found: "No balance sheet or revenue continuity issues. EPS consistency check shows reported EPS ($2.16) vs naive net_income/shares_outstanding implied EPS ($1.137) diverge by ~90%, but this same ~90% gap recurs identically in Q1 2026 and Q2 2025, indicating a systemic mis-scaling (likely ~2x) in the shares_outstanding field across the dataset rather than an error specific to TXN Q2 2026. Recommend the dataset owner review the definition/units of the shares_outstanding column generally, but no action needed for this specific period's reported figures."
+  }},
+  { type: "reasoning", text: `## Summary — TXN, FY2026 Q2
+
+**Verdict: Legitimate** (confidence: medium-high)
+
+- **Balance sheet:** Assets = Liabilities + Equity exactly, 0% difference. Equity jump vs. prior quarters tracks a genuine net income increase (highest in the 10-quarter history).
+- **Revenue continuity:** No flags — steady quarter-over-quarter growth, no anomalous swings.
+- **EPS consistency:** Flagged a ~90% gap (reported $2.16 vs. implied $1.137), but this exact same ~90% gap recurs in Q1 2026 and Q2 2025 too — a systemic pattern, not a one-off. Cross-checking against TXN's real-world share count (~910–915M) shows the *reported* EPS is actually accurate; the dataset's shares_outstanding field appears to be scaled ~2x too high consistently, which looks like a dataset-column issue rather than a Q2-2026-specific error.
+
+Recorded the verdict via propose_verdict, along with a note recommending the dataset owner review the shares_outstanding field's definition/units generally — but no action is needed for this specific period's reported figures.` },
+  { type: "done", stop_reason: "end_turn" },
+],
+AAPL: [
+  { type: "system", text: "Discovering available tools (check_balance_sheet, check_revenue_continuity, check_eps_consistency, get_period_history, propose_verdict)..." },
+  { type: "tool_call", name: "check_balance_sheet", input: { ticker: "AAPL", fiscal_year: 2026, fiscal_period: "Q3" } },
+  { type: "tool_call", name: "check_revenue_continuity", input: { ticker: "AAPL" } },
+  { type: "tool_call", name: "check_eps_consistency", input: { ticker: "AAPL", fiscal_year: 2026, fiscal_period: "Q3" } },
+  { type: "reasoning", text: `All three checks came back clean for AAPL FY2026 Q3:
+
+- **Balance sheet**: Assets ($383.266B) = Liabilities ($275.746B) + Equity ($107.520B) exactly, 0% difference, no negative equity.
+- **Revenue continuity**: No flags — no unusual quarter-over-quarter swings detected across AAPL's history.
+- **EPS consistency**: Reported basic EPS of $2.03 vs. implied $2.0391 from net income/shares — a difference of less than $0.01, well within the expected noise from period-end vs. weighted-average share count.
+
+Since none of the three checks returned anything unusual, per the investigation process there's no trigger requiring get_period_history — this is a straightforward clean result, not an ambiguous one needing deeper pattern analysis. I'll proceed directly to the verdict.` },
+  { type: "tool_call", name: "propose_verdict", input: {
+      ticker: "AAPL", fiscal_year: 2026, fiscal_period: "Q3",
+      verdict: "no_issue", confidence: "high",
+      reasoning: "All three automated checks passed cleanly with no ambiguity. The balance sheet balances exactly (Assets $383.266B = Liabilities $275.746B + Equity $107.520B, 0.0% difference, no negative equity). Revenue continuity check returned zero flags for AAPL, indicating no anomalous quarter-over-quarter swings around this period. EPS consistency check showed reported basic EPS ($2.03) essentially matching the implied EPS from net income/shares ($2.0391), a ~$0.01 gap fully explainable by the known period-end vs. weighted-average share count discrepancy noted in the tool's own caveat. Since none of the three checks surfaced anything unusual, there was no trigger condition requiring a deeper get_period_history pull -- the data for this period is internally consistent and shows no signs of error or unusual business events.",
+      issues_found: "None. Balance sheet ties out exactly, revenue continuity shows no flags, and EPS reconciles within expected tolerance given known dataset limitations (period-end vs weighted-average shares)."
+  }},
+  { type: "reasoning", text: `**Summary: AAPL FY2026 Q3 — No Issue (High Confidence)**
+
+- **Balance sheet:** Assets = Liabilities + Equity exactly ($383.266B = $275.746B + $107.520B), 0% mismatch
+- **Revenue continuity:** No flags — no unusual swings in AAPL's revenue history
+- **EPS consistency:** Reported $2.03 vs. implied $2.0391 — ~$0.01 gap, within normal noise from period-end vs. weighted-average share counts
+
+Since none of the three checks surfaced anything unusual, the process didn't call for pulling get_period_history (that step is reserved for cases with a flagged anomaly to contextualize). The data for this period looks clean and internally consistent. Verdict recorded as no_issue for human review.` },
+  { type: "done", stop_reason: "end_turn" },
+],
+};
+
+let EVENTS = CASES.ABUS;
+
+const trace = document.getElementById('trace');
+const status = document.getElementById('status');
+const playBtn = document.getElementById('playBtn');
+const skipBtn = document.getElementById('skipBtn');
+const resetBtn = document.getElementById('resetBtn');
+let idx = 0;
+let timer = null;
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function renderText(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/^## (.+)$/gm, '<strong style="font-size:1.05em">$1</strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/^- (.+)$/gm, '&nbsp;&nbsp;• $1');
+  return html;
+}
+function addCard(ev) {
+  const div = document.createElement('div');
+  if (ev.type === 'system') {
+    div.className = 'card system';
+    div.innerHTML = `<div class="label">System</div>${escapeHtml(ev.text)}`;
+  } else if (ev.type === 'reasoning') {
+    div.className = 'card reasoning';
+    div.innerHTML = `<div class="label">Reasoning</div>${renderText(ev.text)}`;
+  } else if (ev.type === 'tool_call' && ev.name === 'propose_verdict') {
+    const v = ev.input;
+    div.className = `card verdict ${v.verdict}`;
+    div.innerHTML = `
+      <div class="label">Proposed Verdict (recorded for human review)</div>
+      <span class="badge">${escapeHtml(v.verdict.replace(/_/g,' '))}</span>
+      <span style="color:var(--muted)">confidence: ${escapeHtml(v.confidence)}</span>
+      <div style="margin-top:10px">${renderText(v.reasoning)}</div>
+      <div style="margin-top:10px; color:var(--muted); font-size:0.85em"><strong style="color:var(--text)">Issues found:</strong> ${escapeHtml(v.issues_found)}</div>`;
+  } else if (ev.type === 'tool_call') {
+    div.className = 'card tool_call';
+    div.innerHTML = `<div class="label">Tool Call</div>${escapeHtml(ev.name)}(${escapeHtml(JSON.stringify(ev.input))})`;
+  } else if (ev.type === 'done') {
+    status.textContent = `Done — stop_reason: ${ev.stop_reason}`;
+    playBtn.disabled = true; skipBtn.disabled = true;
+    return;
+  }
+  trace.appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function step() {
+  if (idx >= EVENTS.length) { clearInterval(timer); timer = null; return; }
+  addCard(EVENTS[idx]);
+  idx++;
+}
+function play() {
+  if (timer) return;
+  playBtn.disabled = true;
+  status.textContent = 'Replaying...';
+  timer = setInterval(() => {
+    step();
+    if (idx >= EVENTS.length) { clearInterval(timer); timer = null; }
+  }, 1100);
+}
+function skipToEnd() {
+  clearInterval(timer); timer = null;
+  while (idx < EVENTS.length) step();
+}
+function reset() {
+  clearInterval(timer); timer = null;
+  idx = 0; trace.innerHTML = ''; status.textContent = '';
+  playBtn.disabled = false; skipBtn.disabled = false;
+}
+
+playBtn.addEventListener('click', play);
+skipBtn.addEventListener('click', skipToEnd);
+resetBtn.addEventListener('click', reset);
+
+const caseBtns = document.querySelectorAll('.case-btn');
+function selectCase(name) {
+  EVENTS = CASES[name];
+  caseBtns.forEach(b => b.style.borderColor = (b.dataset.case === name) ? 'var(--accent)' : 'var(--border)');
+  reset();
+}
+caseBtns.forEach(btn => btn.addEventListener('click', () => selectCase(btn.dataset.case)));
+selectCase('ABUS');
+</script>
+</body>
+</html>
